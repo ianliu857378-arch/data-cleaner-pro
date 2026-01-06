@@ -476,7 +476,7 @@ class DataCleaner:
                 'rule': 'numeric_type',
                 'hint': '包含无法解析的文本'
             })
-            return raw_str
+            return None
 
         # 4. 业务规则范围检查 (Age/Salary 等)
         col_lower = col_name.lower()
