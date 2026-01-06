@@ -524,27 +524,35 @@ class DataCleaner:
         df_original = df.copy()
 
         for col in df.columns:
-            if col not in field_types: continue
-            field_type = field_types[col]
+            if col not in field_types:
+                continue
 
-            if field_type == 'date':
-                df_cleaned[col] = [self.clean_date(val, idx, col) for idx, val in
-                                   enumerate(df[col])]
-            elif field_type == 'number':
-                cleaned_values = [self.clean_numeric(v, i, col) for i, v in enumerate(df[col])]
-                df_cleaned[col] = pd.to_numeric(cleaned_values, errors='coerce')
-            elif field_type == 'email':
-                df_cleaned[col] = [self.clean_email(val, idx, col) for idx, val in
-                                   enumerate(df[col])]
+            f_type = field_types[col]
 
-                # --- ✨ 新增：强制转换类型 ✨ ---
-                if field_type == 'number':
-                    # pd.to_numeric 会尝试把结果转回 float/int，无法转换的保持 None
-                    df_cleaned[col] = pd.to_numeric(df_cleaned[col], errors='coerce')
+            if f_type == 'number':
+                # 1. 批量处理并强制转为 numeric
+                # pd.to_numeric 会强制将整列转为 float，这会让 Streamlit 识别为数值（右对齐）
+                temp_series = df[col].apply(lambda x: self.clean_numeric(x, 0, col))
+                df_cleaned[col] = pd.to_numeric(temp_series, errors='coerce')
 
+            elif f_type == 'email':
+                # 处理 Email
+                df_cleaned[col] = df[col].apply(lambda x: self.clean_email(x, 0, col))
 
+            elif f_type == 'date':
+                # 处理日期
+                df_cleaned[col] = df[col].apply(lambda x: self.clean_date(x, 0, col))
+
+        # --- 最终兜底：如果列名里有 salary，再次确保它是 float ---
+        for col in df_cleaned.columns:
+            if 'salary' in col.lower():
+                df_cleaned[col] = pd.to_numeric(df_cleaned[col], errors='coerce')
 
         return df_cleaned, df_original, self.cleaning_log
+
+
+
+
 
 
 # ========== Session State Initialization ==========
