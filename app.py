@@ -531,8 +531,8 @@ class DataCleaner:
                 df_cleaned[col] = [self.clean_date(val, idx, col) for idx, val in
                                    enumerate(df[col])]
             elif field_type == 'number':
-                df_cleaned[col] = [self.clean_numeric(val, idx, col) for idx, val in
-                                   enumerate(df[col])]
+                cleaned_values = [self.clean_numeric(v, i, col) for i, v in enumerate(df[col])]
+                df_cleaned[col] = pd.to_numeric(cleaned_values, errors='coerce')
             elif field_type == 'email':
                 df_cleaned[col] = [self.clean_email(val, idx, col) for idx, val in
                                    enumerate(df[col])]
