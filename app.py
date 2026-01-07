@@ -498,7 +498,7 @@ class DataCleaner:
 
             f_type = field_types[col]
 
-            if f_type == 'number':
+            elif f_type == 'number':
             # 1. 使用列表推导式，传入正确的行索引 i
             cleaned_list = [
                 self.clean_numeric(val, i, col)
