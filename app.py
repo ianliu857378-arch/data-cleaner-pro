@@ -427,74 +427,43 @@ class DataCleaner:
         return value
 
     def clean_numeric(self, value, row_idx, col_name):
-        """
-        深度清洗数值字段
-        处理场景：$7000 (符号), 7,000 (分节符), not_a_number/unknown (占位符)
-        """
         if pd.isna(value) or str(value).strip() == "":
             return None
 
-        # 1. 预处理：转为小写并去除前后空格及特殊字符
         raw_str = str(value).strip()
         str_val = raw_str.lower()
 
-        # 2. 识别“无效值”占位符 (精准覆盖 not_a_number)
-        # 增加对下划线、空格等变体的支持
-        null_keywords = [
-            'unknown', 'not a number', 'not_a_number', 'nan',
-            'n/a', '?', 'none', 'null', '-', 'undefined'
-        ]
-
+        # 1. 识别无效占位符 (保持不变)
+        null_keywords = ['unknown', 'not a number', 'not_a_number', 'nan', 'n/a', '?', 'none', 'null', '-', 'undefined']
         if str_val in null_keywords:
-            self.cleaning_log.append({
-                'row': row_idx + 1,
-                'column': col_name,
-                'raw': raw_str,
-                'cleaned': None,
-                'issue': 'placeholder_value',
-                'rule': 'numeric_conversion',
-                'hint': f'识别为无效占位符: {raw_str}'
-            })
-            return None  # 成功转化为 None (在 Pandas 中显示为 NaN)
-
-        # 3. 提取数字核心逻辑
-        # 使用正则只保留数字、小数点和负号，过滤掉 $ , ￥ 等
-        clean_num_str = "".join(re.findall(r'[0-9.-]+', str_val))
-
-        try:
-            if not clean_num_str or clean_num_str == ".":
-                raise ValueError
-            num = float(clean_num_str)
-        except (ValueError, TypeError):
-            # 如果实在解析不出数字，记录错误并返回原始值
-            self.cleaning_log.append({
-                'row': row_idx + 1,
-                'column': col_name,
-                'raw': raw_str,
-                'cleaned': None,
-                'issue': 'not_numeric',
-                'rule': 'numeric_type',
-                'hint': '包含无法解析的文本'
-            })
+            self.add_log(row_idx, col_name, raw_str, None, 'placeholder_value', '识别为无效占位符')
             return None
 
-        # 4. 业务规则范围检查 (Age/Salary 等)
+        # 2. 【核心修改】先预处理：移除货币符号和千分位逗号
+        # 这样 $7,000.00 会变成 7000.00
+        temp_val = str_val.replace('$', '').replace('￥', '').replace(',', '')
+
+        # 3. 提取数字核心部分
+        # 只提取第一个符合数字特征的片段 (支持负号和小数点)
+        clean_num_match = re.search(r'[-+]?\d*\.?\d+', temp_val)
+
+        try:
+            if not clean_num_match:
+                raise ValueError
+            num = float(clean_num_match.group())
+        except (ValueError, TypeError):
+            self.add_log(row_idx, col_name, raw_str, None, 'not_numeric', '无法解析为数值')
+            return None
+
+        # 4. 业务规则检查 (Age/Salary 等 - 保持你的逻辑)
         col_lower = col_name.lower()
         for rule_key, rule_val in self.rules.items():
             if rule_key in col_lower:
                 if 'min' in rule_val and num < rule_val['min']:
-                    self.cleaning_log.append({
-                        'row': row_idx + 1, 'column': col_name, 'raw': raw_str,
-                        'cleaned': None, 'issue': 'out_of_range',
-                        'rule': f"{col_name} >= {rule_val['min']}", 'hint': '数值低于最小值'
-                    })
+                    self.add_log(row_idx, col_name, raw_str, None, 'out_of_range', '数值低于最小值')
                     return None
                 if 'max' in rule_val and num > rule_val['max']:
-                    self.cleaning_log.append({
-                        'row': row_idx + 1, 'column': col_name, 'raw': raw_str,
-                        'cleaned': None, 'issue': 'out_of_range',
-                        'rule': f"{col_name} <= {rule_val['max']}", 'hint': '数值超出最大值'
-                    })
+                    self.add_log(row_idx, col_name, raw_str, None, 'out_of_range', '数值超出最大值')
                     return None
 
         return num
@@ -530,10 +499,10 @@ class DataCleaner:
             f_type = field_types[col]
 
             if f_type == 'number':
-                # 1. 批量处理并强制转为 numeric
-                # pd.to_numeric 会强制将整列转为 float，这会让 Streamlit 识别为数值（右对齐）
-                temp_series = df[col].apply(lambda x: self.clean_numeric(x, 0, col))
-                df_cleaned[col] = pd.to_numeric(temp_series, errors='coerce')
+
+                cleaned_series = df[col].apply(lambda x: self.clean_numeric(x, 0, col))
+                # 【核心】强制转换，这会让 $7,000 变成 7000.0 (数值)
+                df_cleaned[col] = pd.to_numeric(cleaned_series, errors='coerce')
 
             elif f_type == 'email':
                 # 处理 Email
