@@ -433,18 +433,17 @@ class DataCleaner:
         raw_str = str(value).strip()
         str_val = raw_str.lower()
 
-        # 1. 识别无效占位符 (保持不变)
+        # 1. 识别无效占位符
         null_keywords = ['unknown', 'not a number', 'not_a_number', 'nan', 'n/a', '?', 'none', 'null', '-', 'undefined']
         if str_val in null_keywords:
-            self.add_log(row_idx, col_name, raw_str, None, 'placeholder_value', '识别为无效占位符')
+            self.add_log(row_idx, col_name, raw_str, None, 'placeholder_value', f'识别为无效占位符: {raw_str}')
             return None
 
-        # 2. 【核心修改】先预处理：移除货币符号和千分位逗号
-        # 这样 $7,000.00 会变成 7000.00
+        # 2. 预处理：移除货币符号和千分位逗号 (让 $7,000 变成 7000)
         temp_val = str_val.replace('$', '').replace('￥', '').replace(',', '')
 
-        # 3. 提取数字核心部分
-        # 只提取第一个符合数字特征的片段 (支持负号和小数点)
+        # 3. 提取数字部分
+        import re
         clean_num_match = re.search(r'[-+]?\d*\.?\d+', temp_val)
 
         try:
@@ -455,16 +454,17 @@ class DataCleaner:
             self.add_log(row_idx, col_name, raw_str, None, 'not_numeric', '无法解析为数值')
             return None
 
-        # 4. 业务规则检查 (Age/Salary 等 - 保持你的逻辑)
+        # 4. 范围检查 (根据你的 rules 配置)
         col_lower = col_name.lower()
-        for rule_key, rule_val in self.rules.items():
-            if rule_key in col_lower:
-                if 'min' in rule_val and num < rule_val['min']:
-                    self.add_log(row_idx, col_name, raw_str, None, 'out_of_range', '数值低于最小值')
-                    return None
-                if 'max' in rule_val and num > rule_val['max']:
-                    self.add_log(row_idx, col_name, raw_str, None, 'out_of_range', '数值超出最大值')
-                    return None
+        if hasattr(self, 'rules'):
+            for rule_key, rule_val in self.rules.items():
+                if rule_key in col_lower:
+                    if 'min' in rule_val and num < rule_val['min']:
+                        self.add_log(row_idx, col_name, raw_str, None, 'out_of_range', '数值低于最小值')
+                        return None
+                    if 'max' in rule_val and num > rule_val['max']:
+                        self.add_log(row_idx, col_name, raw_str, None, 'out_of_range', '数值超出最大值')
+                        return None
 
         return num
 
@@ -499,10 +499,18 @@ class DataCleaner:
             f_type = field_types[col]
 
             if f_type == 'number':
+            # 1. 使用列表推导式，传入正确的行索引 i
+            cleaned_list = [
+                self.clean_numeric(val, i, col)
+                for i, val in enumerate(df[col])
+            ]
 
-                cleaned_series = df[col].apply(lambda x: self.clean_numeric(x, 0, col))
-                # 【核心】强制转换，这会让 $7,000 变成 7000.0 (数值)
-                df_cleaned[col] = pd.to_numeric(cleaned_series, errors='coerce')
+            # 2. 转换为 Series
+            cleaned_series = pd.Series(cleaned_list, index=df.index)
+
+            # 3. 【核心修复】强制转换并赋值
+            # 这一步会确保 $7000 变成 7000.0，且整列 dtype 变为 float64
+            df_cleaned[col] = pd.to_numeric(cleaned_series, errors='coerce')
 
             elif f_type == 'email':
                 # 处理 Email
