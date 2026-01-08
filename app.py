@@ -486,6 +486,17 @@ class DataCleaner:
             })
         return email
 
+    def add_log(self, row, col, raw, cleaned, issue, hint=None, rule=None):
+        self.cleaning_log.append({
+            'row': row + 1,
+            'column': col,
+            'raw': raw,
+            'cleaned': cleaned,
+            'issue': issue,
+            'rule': rule,
+            'hint': hint
+        })
+
     def clean_dataframe(self, df, field_types):
         """执行清洗管道 (保持原结构)"""
         self.cleaning_log = []
@@ -498,27 +509,29 @@ class DataCleaner:
 
             f_type = field_types[col]
 
-            elif f_type == 'number':
-            # 1. 使用列表推导式，传入正确的行索引 i
-            cleaned_list = [
-                self.clean_numeric(val, i, col)
-                for i, val in enumerate(df[col])
-            ]
+            if f_type == 'number':
 
-            # 2. 转换为 Series
-            cleaned_series = pd.Series(cleaned_list, index=df.index)
+                df_cleaned[col] = [
+                    self.clean_numeric(val, idx, col)
+                    for idx, val in enumerate(df[col])
+                ]
 
-            # 3. 【核心修复】强制转换并赋值
-            # 这一步会确保 $7000 变成 7000.0，且整列 dtype 变为 float64
-            df_cleaned[col] = pd.to_numeric(cleaned_series, errors='coerce')
+                # 【核心】强制转换，这会让 $7,000 变成 7000.0 (数值)
+                df_cleaned[col] = pd.to_numeric(cleaned_series, errors='coerce')
 
             elif f_type == 'email':
                 # 处理 Email
-                df_cleaned[col] = df[col].apply(lambda x: self.clean_email(x, 0, col))
+                df_cleaned[col] = [
+                    self.clean_email(val, idx, col)
+                    for idx, val in enumerate(df[col])
+                ]
 
             elif f_type == 'date':
                 # 处理日期
-                df_cleaned[col] = df[col].apply(lambda x: self.clean_date(x, 0, col))
+                df_cleaned[col] = [
+                    self.clean_date(val, idx, col)
+                    for idx, val in enumerate(df[col])
+                ]
 
         # --- 最终兜底：如果列名里有 salary，再次确保它是 float ---
         for col in df_cleaned.columns:
